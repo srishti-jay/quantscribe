@@ -1,0 +1,82 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "quantscribe"
+version = "0.1.0"
+description = "RAG-based automated thematic peer analysis for Indian BFSI sector"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Harshita Gaikwad"},
+    {name = "Pranav Taneja"},
+    {name = "Sneha Yadav"},
+    {name = "Srishti Jayaswal"},
+    {name = "Vybhav Chaturvedi"},
+]
+
+dependencies = [
+    # ── ETL & PDF Parsing ──
+    "pdfplumber>=0.10.0",
+    "PyMuPDF>=1.23.0",
+    "camelot-py[cv]>=0.11.0",
+
+    # ── Embeddings & Vector DB ──
+    "sentence-transformers>=2.2.0",
+    "faiss-cpu>=1.7.4",
+
+    # ── LLM Orchestration ──
+    "langchain>=0.2.0",
+    "langchain-google-genai>=1.0.0",
+    "google-generativeai>=0.5.0",
+
+    # ── Data Validation & Schemas ──
+    "pydantic>=2.5.0",
+
+    # ── Utilities ──
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "structlog>=23.1.0",
+    "python-dotenv>=1.0.0",
+    "tqdm>=4.65.0",
+]
+
+[project.optional-dependencies]
+eval = [
+    "ragas>=0.1.0",
+    "deepeval>=0.21.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+ocr = [
+    "pytesseract>=0.3.10",
+    "Pillow>=10.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quantscribe*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "ANN"]
+ignore = ["ANN101", "ANN102"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
