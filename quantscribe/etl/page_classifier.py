@@ -243,3 +243,4 @@ def _empty_page(page_number: int) -> ParsedPage:
         extraction_warnings=["page_parse_failed_or_empty"],
         confidence_score=0.0,
     )
+    
