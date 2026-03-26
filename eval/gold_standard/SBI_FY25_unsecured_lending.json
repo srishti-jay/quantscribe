@@ -1,0 +1,12 @@
+{
+    "test_id": "SBI_FY25_unsecured_lending_001",
+    "query_theme": "unsecured_lending",
+    "bank_name": "SBI",
+    "fiscal_year": "FY25",
+    "expected_metrics": {
+        "personal_loan_percent": 8.3,
+        "credit_card_npa": 3.08
+    },
+    "expected_pages": [17, 46, 118],
+    "source_document": "SBI Bank Report.pdf"
+}

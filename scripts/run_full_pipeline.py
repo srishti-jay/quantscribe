@@ -5,9 +5,14 @@ Loads FAISS indices, runs peer comparison, evaluates against gold standard.
 Run AFTER Team A has produced FAISS indices AND Team B has implemented extraction chain.
 
 Usage:
+    python scripts/run_full_pipeline.py --theme credit_risk --skip-eval
     python scripts/run_full_pipeline.py --theme credit_risk
     python scripts/run_full_pipeline.py --theme capital_adequacy --banks HDFC_BANK SBI ICICI_BANK
     python scripts/run_full_pipeline.py --theme credit_risk --skip-eval
+    python scripts/run_full_pipeline.py --theme credit_risk --banks HDFC_BANK SBI --top-k 5
+    python scripts/run_full_pipeline.py --theme capital_adequacy --banks HDFC_BANK SBI --top-k 5
+    python scripts/run_full_pipeline.py --theme liquidity_risk --banks HDFC_BANK SBI --top-k 5
+    python scripts/run_full_pipeline.py --theme unsecured_lending --banks HDFC_BANK SBI --top-k 5
 """
 
 import argparse
@@ -199,4 +204,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
