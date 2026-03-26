@@ -33,6 +33,9 @@ User Query → Query Embedding → Fan-out Retrieval (per bank) → LLM Extracti
 
 ## Quick Start
 
+All the ![Data](https://drive.google.com/drive/folders/1KVUonddJzhCiYDgTqJ09Sk_ngi9Wnupz?usp=sharing) is available in the google drive link.
+Please make sure you download the data and place it in the `data/pdfs` folder. (Create a new folder if required)
+
 ```bash
 # Clone
 git clone https://github.com/vybhav72954/quantscribe.git
