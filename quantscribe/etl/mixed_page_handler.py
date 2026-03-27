@@ -1,26 +1,25 @@
 """
 Mixed page handler.
 
-Handles pages that contain BOTH narrative text and tables.
-Strategy:
-1. Use pdfplumber to detect table bounding boxes + extract raw table data.
-2. Use PyMuPDF to extract text blocks OUTSIDE table regions.
-3. Return both as structured dicts for the pipeline to chunk separately.
+Handles pages classified as MIXED — containing BOTH narrative text
+and tables on the same page. This is the most common and dangerous
+page type in Indian annual reports.
 
-Returns a dict with:
-    - "narrative_text":   str  — text from outside table regions
-    - "narrative_blocks": list — structured block dicts (for section_detector)
-    - "tables":           list — list of table-as-list-of-dicts
+Strategy:
+1. Get table bounding boxes from pdfplumber.
+2. Extract tables within those bounding boxes.
+3. Extract text blocks OUTSIDE table regions via PyMuPDF.
+4. Return both as separate content streams for the chunker.
 """
 
 from __future__ import annotations
 
-from statistics import median
+from typing import Optional
 
 import fitz  # PyMuPDF
-import pdfplumber
 
-from quantscribe.etl.text_cleaner import strip_unicode_garbage, clean_table_cell
+from quantscribe.etl.pdf_parser import extract_tables, extract_table_bboxes
+from quantscribe.etl.text_cleaner import strip_unicode_garbage
 from quantscribe.logging_config import get_logger
 
 logger = get_logger("quantscribe.etl.mixed_page_handler")
@@ -28,133 +27,44 @@ logger = get_logger("quantscribe.etl.mixed_page_handler")
 
 def handle_mixed_page(page_number: int, pdf_path: str) -> dict:
     """
-    Split a mixed page into table and narrative sub-regions.
+    Split a mixed page into separate table and narrative content.
 
     Args:
         page_number: 0-indexed page number.
-        pdf_path:    Absolute path to the PDF file.
+        pdf_path:    Path to the PDF file.
 
     Returns:
-        Dict with keys:
-        - "narrative_text":   str  — cleaned text outside all table bboxes
-        - "narrative_blocks": list — block dicts with font metadata (for section_detector)
-        - "tables":           list[list[dict]] — one list-of-dicts per detected table
+        Dict with:
+        - "narrative_text": Cleaned text from blocks OUTSIDE table regions.
+        - "narrative_blocks": Block dicts with font metadata (for section_detector).
+        - "tables": List of tables as list-of-row-dicts (from pdfplumber).
+        - "warnings": List of any extraction warnings.
     """
-    # ── Pass 1: pdfplumber — get table bboxes + raw table data ──
-    table_bboxes: list[tuple] = []
-    raw_tables: list[list[list[str | None]]] = []
+    warnings: list[str] = []
 
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            if page_number >= len(pdf.pages):
-                logger.warn("mixed_page_out_of_range", page=page_number + 1)
-                return _empty_result()
+    # ── Step 1: Get table bounding boxes ──
+    table_bboxes = extract_table_bboxes(page_number, pdf_path)
 
-            plumber_page = pdf.pages[page_number]
-            detected = plumber_page.find_tables()
+    # ── Step 2: Extract tables ──
+    tables = extract_tables(page_number, pdf_path, use_camelot_fallback=True)
 
-            for tbl in detected:
-                table_bboxes.append(tbl.bbox)
-                extracted = tbl.extract()
-                if extracted:
-                    raw_tables.append(extracted)
-    except Exception as e:
-        logger.error("mixed_pdfplumber_failed", page=page_number + 1, error=str(e))
-        return _empty_result()
+    if not tables and table_bboxes:
+        warnings.append("table_bboxes_found_but_extraction_empty")
 
-    # ── Pass 2: PyMuPDF — extract text blocks with font metadata ──
-    narrative_text = ""
-    narrative_blocks: list[dict] = []
+    # ── Step 3: Extract narrative text OUTSIDE table regions ──
+    narrative_text, narrative_blocks = _extract_narrative_outside_tables(
+        page_number, pdf_path, table_bboxes,
+    )
 
-    try:
-        doc = fitz.open(pdf_path)
-        mu_page = doc[page_number]
-        page_height = mu_page.rect.height
-        dict_data = mu_page.get_text("dict")
-        doc.close()
-
-        # Collect all font sizes for median (needed by section_detector)
-        all_sizes: list[float] = []
-        for block in dict_data["blocks"]:
-            if block["type"] != 0:
-                continue
-            for line in block["lines"]:
-                for span in line["spans"]:
-                    all_sizes.append(span["size"])
-
-        median_size = median(all_sizes) if all_sizes else 10.0
-
-        outside_paragraphs: list[str] = []
-
-        for block in dict_data["blocks"]:
-            if block["type"] != 0:  # Skip image blocks
-                continue
-
-            bx0, by0, bx1, by1 = (
-                block["bbox"][0], block["bbox"][1],
-                block["bbox"][2], block["bbox"][3],
-            )
-            centroid_x = (bx0 + bx1) / 2
-            centroid_y = (by0 + by1) / 2
-
-            # Skip blocks whose centroid falls inside a table region
-            inside_table = any(
-                tx0 <= centroid_x <= tx1 and ty0 <= centroid_y <= ty1
-                for tx0, ty0, tx1, ty1 in table_bboxes
-            )
-            if inside_table:
-                continue
-
-            # Build text + font metadata from spans
-            block_text_parts: list[str] = []
-            block_sizes: list[float] = []
-            block_bold = False
-
-            for line in block["lines"]:
-                line_parts: list[str] = []
-                for span in line["spans"]:
-                    line_parts.append(span["text"])
-                    block_sizes.append(span["size"])
-                    font_name = span.get("font", "")
-                    if "Bold" in font_name or "Bd" in font_name:
-                        block_bold = True
-                block_text_parts.append(" ".join(line_parts))
-
-            raw_text = "\n".join(block_text_parts)
-            cleaned = strip_unicode_garbage(raw_text)
-
-            if not cleaned.strip():
-                continue
-
-            block_font_size = max(block_sizes) if block_sizes else median_size
-
-            narrative_blocks.append({
-                "text": cleaned,
-                "font_size": block_font_size,
-                "median_font_size": median_size,
-                "y_position": by0,
-                "page_height": page_height,
-                "is_bold": block_bold,
-            })
-            outside_paragraphs.append(cleaned)
-
-        narrative_text = "\n\n".join(outside_paragraphs)
-
-    except Exception as e:
-        logger.error("mixed_pymupdf_failed", page=page_number + 1, error=str(e))
-
-    # ── Parse raw tables into list-of-dicts format ──
-    tables: list[list[dict]] = []
-    for raw_table in raw_tables:
-        parsed = _parse_raw_table(raw_table, page_number)
-        if parsed:
-            tables.append(parsed)
+    if not narrative_text.strip():
+        warnings.append("no_narrative_text_outside_tables")
 
     logger.info(
         "mixed_page_handled",
         page=page_number + 1,
+        tables=len(tables),
+        table_bboxes=len(table_bboxes),
         narrative_words=len(narrative_text.split()),
-        tables_found=len(tables),
         narrative_blocks=len(narrative_blocks),
     )
 
@@ -162,82 +72,103 @@ def handle_mixed_page(page_number: int, pdf_path: str) -> dict:
         "narrative_text": narrative_text,
         "narrative_blocks": narrative_blocks,
         "tables": tables,
+        "warnings": warnings,
     }
 
 
-# ── Internal Helpers ──
-
-
-def _parse_raw_table(
-    raw_table: list[list[str | None]],
+def _extract_narrative_outside_tables(
     page_number: int,
-) -> list[dict]:
+    pdf_path: str,
+    table_bboxes: list[tuple],
+) -> tuple[str, list[dict]]:
     """
-    Convert a raw pdfplumber table to a list of row-dicts.
+    Extract text blocks whose centroids fall OUTSIDE any table bbox.
 
-    Handles None values from merged cells (forward-fill), empty tables,
-    and unicode garbage in cell text.
+    Returns:
+        (full_text, structured_blocks) where structured_blocks
+        have font metadata for section header detection.
     """
-    if not raw_table or len(raw_table) < 2:
-        return []
+    doc = fitz.open(pdf_path)
+    mu_page = doc[page_number]
+    page_height = mu_page.rect.height
+    dict_data = mu_page.get_text("dict")
+    doc.close()
 
-    filled = _forward_fill(raw_table)
+    # ── Compute median font size across whole page ──
+    all_sizes: list[float] = []
+    for block in dict_data["blocks"]:
+        if block["type"] != 0:
+            continue
+        for line in block["lines"]:
+            for span in line["spans"]:
+                all_sizes.append(span["size"])
 
-    # Build headers from first row
-    headers: list[str] = []
-    seen: set[str] = set()
-    for i, h in enumerate(filled[0]):
-        cleaned_h = strip_unicode_garbage(str(h) if h else "").replace("\n", " ").strip()
-        if not cleaned_h:
-            cleaned_h = f"col_{i}"
-        if cleaned_h in seen:
-            cleaned_h = f"{cleaned_h}_{i}"
-        seen.add(cleaned_h)
-        headers.append(cleaned_h)
+    from statistics import median
+    median_size = median(all_sizes) if all_sizes else 10.0
 
-    rows: list[dict] = []
-    for row in filled[1:]:
-        if all(not str(cell).strip() for cell in row):
-            continue  # Skip fully empty rows
-        row_dict: dict[str, str] = {}
-        for i, cell in enumerate(row):
-            key = headers[i] if i < len(headers) else f"col_{i}"
-            row_dict[key] = clean_table_cell(cell)
-        rows.append(row_dict)
+    # ── Filter blocks outside table regions ──
+    narrative_blocks: list[dict] = []
+    paragraphs: list[str] = []
 
-    if not rows:
-        logger.warn("empty_table_after_parsing", page=page_number + 1)
+    for block in dict_data["blocks"]:
+        if block["type"] != 0:
+            continue
 
-    return rows
+        # Check if block centroid is inside any table bbox
+        bx0, by0, bx1, by1 = block["bbox"]
+        cx = (bx0 + bx1) / 2
+        cy = (by0 + by1) / 2
+
+        if _point_in_any_bbox(cx, cy, table_bboxes):
+            continue  # Skip — this text is part of a table
+
+        # ── Build block text and metadata ──
+        block_text_parts: list[str] = []
+        block_sizes: list[float] = []
+        block_bold = False
+
+        for line in block["lines"]:
+            line_parts: list[str] = []
+            for span in line["spans"]:
+                line_parts.append(span["text"])
+                block_sizes.append(span["size"])
+                if "Bold" in span["font"] or "Bd" in span["font"]:
+                    block_bold = True
+            block_text_parts.append(" ".join(line_parts))
+
+        raw_text = "\n".join(block_text_parts)
+        cleaned = strip_unicode_garbage(raw_text)
+
+        if not cleaned.strip():
+            continue
+
+        # Skip page numbers and footers (very short, at bottom of page)
+        if len(cleaned.split()) <= 3 and by0 > page_height * 0.9:
+            continue
+
+        block_font_size = max(block_sizes) if block_sizes else median_size
+
+        narrative_blocks.append({
+            "text": cleaned,
+            "font_size": block_font_size,
+            "median_font_size": median_size,
+            "y_position": by0,
+            "page_height": page_height,
+            "is_bold": block_bold,
+        })
+        paragraphs.append(cleaned)
+
+    full_text = "\n\n".join(paragraphs)
+    return full_text, narrative_blocks
 
 
-def _forward_fill(table: list[list[str | None]]) -> list[list[str]]:
-    """Forward-fill None cells from the row above (handles merged cells)."""
-    if not table:
-        return []
-
-    num_cols = max(len(row) for row in table)
-    result: list[list[str]] = []
-
-    for row_idx, row in enumerate(table):
-        padded = list(row) + [None] * (num_cols - len(row))
-        filled_row: list[str] = []
-
-        for col_idx, cell in enumerate(padded):
-            if cell is None and row_idx > 0 and col_idx < len(result[-1]):
-                filled_row.append(result[-1][col_idx])
-            else:
-                filled_row.append(str(cell).strip() if cell else "")
-
-        result.append(filled_row)
-
-    return result
-
-
-def _empty_result() -> dict:
-    """Return a safe empty result dict for failed/out-of-range pages."""
-    return {
-        "narrative_text": "",
-        "narrative_blocks": [],
-        "tables": [],
-    }
+def _point_in_any_bbox(
+    x: float,
+    y: float,
+    bboxes: list[tuple],
+) -> bool:
+    """Check if point (x, y) falls inside any bounding box."""
+    for x0, y0, x1, y1 in bboxes:
+        if x0 <= x <= x1 and y0 <= y <= y1:
+            return True
+    return False
