@@ -4,6 +4,9 @@ DeepEval evaluation module.
 Measures LLM output faithfulness and answer relevancy
 using DeepEval framework with Gemini as the judge LLM.
 
+DeepEval defaults to OpenAI. This module provides a proper
+DeepEvalBaseLLM subclass that wraps Gemini, so no OpenAI key is needed.
+
 Usage:
     from quantscribe.evaluation.deepeval_eval import run_deepeval_evaluation
 
@@ -14,13 +17,9 @@ Usage:
         retrieved_contexts=["chunk1 text...", "chunk2 text..."],
         llm_response="HDFC Bank's Gross NPA ratio stood at 1.33%...",
     )
-    print(results)
-    # {"faithfulness": 0.92, "answer_relevancy": 0.88}
 """
 
 from __future__ import annotations
-
-from typing import Optional
 
 from quantscribe.config import get_settings
 from quantscribe.logging_config import get_logger
@@ -28,33 +27,42 @@ from quantscribe.logging_config import get_logger
 logger = get_logger("quantscribe.evaluation.deepeval")
 
 
-class GeminiDeepEvalModel:
+def _build_gemini_judge():
     """
-    Wraps Gemini for use as DeepEval's judge LLM.
+    Build a Gemini-backed judge model for DeepEval.
 
-    DeepEval defaults to OpenAI. This class provides a Gemini-backed
-    alternative by implementing the interface DeepEval expects.
+    DeepEval requires a DeepEvalBaseLLM subclass with
+    generate(), a_generate(), get_model_name(), and load_model().
     """
+    from deepeval.models.base_model import DeepEvalBaseLLM
+    from langchain_google_genai import ChatGoogleGenerativeAI
 
-    def __init__(self, model_name: str | None = None):
-        from langchain_google_genai import ChatGoogleGenerativeAI
+    settings = get_settings()
 
-        settings = get_settings()
-        self.model_name = model_name or settings.llm_model
+    class GeminiJudge(DeepEvalBaseLLM):
+        def __init__(self):
+            self.model_name = settings.llm_model
+            self.llm = ChatGoogleGenerativeAI(
+                model=settings.llm_model,
+                temperature=0.0,
+                google_api_key=settings.google_api_key,
+            )
 
-        self.llm = ChatGoogleGenerativeAI(
-            model=self.model_name,
-            temperature=0.0,
-            google_api_key=settings.google_api_key,
-        )
+        def load_model(self):
+            return self.llm
 
-    def generate(self, prompt: str) -> str:
-        """Generate a response from Gemini."""
-        response = self.llm.invoke(prompt)
-        return response.content
+        def generate(self, prompt: str, **kwargs) -> str:
+            response = self.llm.invoke(prompt)
+            return response.content
 
-    def get_model_name(self) -> str:
-        return self.model_name
+        async def a_generate(self, prompt: str, **kwargs) -> str:
+            response = await self.llm.ainvoke(prompt)
+            return response.content
+
+        def get_model_name(self) -> str:
+            return self.model_name
+
+    return GeminiJudge()
 
 
 def run_deepeval_evaluation(
@@ -67,7 +75,7 @@ def run_deepeval_evaluation(
     """
     Run DeepEval faithfulness and answer relevancy evaluation.
 
-    Uses Gemini as the judge LLM.
+    Uses Gemini as the judge LLM via GeminiJudge wrapper.
 
     Args:
         theme: The macro theme queried.
@@ -87,6 +95,13 @@ def run_deepeval_evaluation(
         logger.error("deepeval_import_failed", error=str(e))
         return {"faithfulness": -1.0, "answer_relevancy": -1.0}
 
+    # ── Build Gemini judge ──
+    try:
+        judge = _build_gemini_judge()
+    except Exception as e:
+        logger.error("gemini_judge_init_failed", error=str(e)[:200])
+        return {"faithfulness": -1.0, "answer_relevancy": -1.0}
+
     # ── Build test case ──
     test_case = LLMTestCase(
         input=query,
@@ -95,13 +110,12 @@ def run_deepeval_evaluation(
     )
 
     results: dict[str, float] = {}
-    settings = get_settings()
 
     # ── Faithfulness ──
     try:
         faithfulness = FaithfulnessMetric(
             threshold=0.85,
-            model=settings.llm_model,
+            model=judge,
         )
         faithfulness.measure(test_case)
         results["faithfulness"] = round(float(faithfulness.score), 4)
@@ -124,7 +138,7 @@ def run_deepeval_evaluation(
     try:
         relevancy = AnswerRelevancyMetric(
             threshold=0.80,
-            model=settings.llm_model,
+            model=judge,
         )
         relevancy.measure(test_case)
         results["answer_relevancy"] = round(float(relevancy.score), 4)
@@ -181,3 +195,4 @@ def run_deepeval_batch(
         all_results.append(result)
 
     return all_results
+    
