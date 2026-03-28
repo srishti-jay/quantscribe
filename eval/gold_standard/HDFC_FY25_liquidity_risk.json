@@ -6,6 +6,6 @@
     "expected_metrics": {
         "lcr_percent": 118.96
     },
-    "expected_pages": [235, 354],
+    "expected_pages": [230, 235, 349, 351, 354],
     "source_document": "HDFC Bank Report.pdf"
 }

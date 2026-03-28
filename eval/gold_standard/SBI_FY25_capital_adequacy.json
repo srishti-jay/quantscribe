@@ -8,6 +8,6 @@
         "tier1_ratio": 12.11,
         "total_car": 14.25
     },
-    "expected_pages": [17, 190],
+    "expected_pages": [17, 190, 192, 348, 349],
     "source_document": "SBI Bank Report.pdf"
 }

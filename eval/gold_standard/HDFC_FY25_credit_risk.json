@@ -8,6 +8,6 @@
         "net_npa_ratio": 0.43,
         "provision_coverage_ratio": 67.86
     },
-    "expected_pages": [9, 40, 54],
+    "expected_pages": [9, 40, 54, 229, 307],
     "source_document": "HDFC Bank Report.pdf"
 }

@@ -8,6 +8,6 @@
         "net_npa_ratio": 0.47,
         "provision_coverage_ratio": 74.42
     },
-    "expected_pages": [18],
+    "expected_pages": [18, 186, 208, 210],
     "source_document": "SBI Bank Report.pdf"
 }

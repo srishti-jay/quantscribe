@@ -6,6 +6,6 @@
     "expected_metrics": {
         "lcr_percent": 132.26
     },
-    "expected_pages": [193, 194],
+    "expected_pages": [193, 194, 196, 197, 200],
     "source_document": "SBI Bank Report.pdf"
 }

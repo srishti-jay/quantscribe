@@ -7,6 +7,6 @@
         "personal_loan_percent": 7.6,
         "credit_card_npa": 0.72
     },
-    "expected_pages": [9, 45, 217],
+    "expected_pages": [9, 45, 217, 229,  333, 367],
     "source_document": "HDFC Bank Report.pdf"
 }

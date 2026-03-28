@@ -8,6 +8,6 @@
         "tier1_ratio": 17.69,
         "total_car": 19.6
     },
-    "expected_pages": [9, 199, 347],
+    "expected_pages": [9, 199, 347, 94, 209, 342, 423],
     "source_document": "HDFC Bank Report.pdf"
 }

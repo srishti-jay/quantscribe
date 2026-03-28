@@ -7,6 +7,6 @@
         "personal_loan_percent": 8.3,
         "credit_card_npa": 3.08
     },
-    "expected_pages": [17, 46, 118],
+    "expected_pages": [17, 46, 47, 118],
     "source_document": "SBI Bank Report.pdf"
 }

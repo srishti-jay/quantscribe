@@ -45,13 +45,12 @@ class Settings(BaseSettings):
     table_max_tokens: int = Field(default=1024)
 
     # ── Retrieval ──
-    top_k_per_bank: int = Field(default=5)
+    top_k_per_bank: int = Field(default=10)
 
     # ── ETL ──
     parse_version: str = Field(default="etl_v1.0.0")
 
     # ── Page Classification Thresholds ──
-    # Tune these empirically on 10 sample pages per bank
     graphical_image_threshold: int = Field(default=2)
     graphical_text_block_threshold: int = Field(default=3)
     mixed_text_block_threshold: int = Field(default=5)
@@ -118,6 +117,8 @@ KNOWN_SECTIONS: list[str] = [
 ]
 
 # ── Macro Theme Taxonomy ──
+# query_anchor: tuned to match how Indian banks actually write about
+# each theme in their annual reports. These drive FAISS retrieval quality.
 THEME_TAXONOMY: dict[str, dict] = {
     "credit_risk": {
         "name": "Credit Risk Exposure",
@@ -126,7 +127,11 @@ THEME_TAXONOMY: dict[str, dict] = {
             "provision_coverage_ratio", "slippage_ratio",
         ],
         "source_sections": ["MD&A", "Asset Quality", "Risk Management"],
-        "query_anchor": "credit risk gross NPA net NPA provision coverage slippage ratio asset quality",
+        "query_anchor": (
+            "credit risk gross NPA net NPA GNPA NNPA provision coverage ratio PCR "
+            "slippage ratio asset quality non-performing advances classification "
+            "substandard doubtful loss assets divergence"
+        ),
     },
     "liquidity_risk": {
         "name": "Liquidity Risk",
@@ -134,16 +139,24 @@ THEME_TAXONOMY: dict[str, dict] = {
             "lcr_percent", "nsfr_percent", "loan_to_deposit_ratio",
         ],
         "source_sections": ["Risk Management", "Basel III Disclosures"],
-        "query_anchor": "liquidity risk LCR NSFR loan to deposit ratio funding stability",
+        "query_anchor": (
+            "liquidity coverage ratio LCR NSFR net stable funding ratio "
+            "loan to deposit ratio credit deposit ratio liquidity risk "
+            "Basel III standalone quarterly average high quality liquid assets HQLA"
+        ),
     },
     "unsecured_lending": {
         "name": "Unsecured Lending Exposure",
         "target_metrics": [
-            "unsecured_loan_percent", "personal_loan_growth",
-            "credit_card_npa",
+            "personal_loan_percent", "personal_loan_growth",
+            "credit_card_npa", "unsecured_loan_percent",
         ],
         "source_sections": ["MD&A", "Segment Reporting"],
-        "query_anchor": "unsecured lending personal loan credit card exposure retail loan growth",
+        "query_anchor": (
+            "personal loans retail advances credit card unsecured portfolio "
+            "composition percentage total advances segment NPA asset quality "
+            "retail loan outstanding home loan consumer durables"
+        ),
     },
     "capital_adequacy": {
         "name": "Capital Adequacy",
@@ -151,7 +164,11 @@ THEME_TAXONOMY: dict[str, dict] = {
             "cet1_ratio", "tier1_ratio", "total_car", "rwa_growth",
         ],
         "source_sections": ["Basel III Disclosures", "Capital Adequacy"],
-        "query_anchor": "capital adequacy CET1 tier 1 CAR CRAR risk weighted assets Basel III",
+        "query_anchor": (
+            "capital adequacy CET1 common equity tier 1 tier 1 ratio "
+            "total CAR CRAR capital to risk weighted assets Basel III "
+            "risk weighted assets RWA minimum regulatory requirement"
+        ),
     },
     "market_risk": {
         "name": "Market Risk",
@@ -159,7 +176,11 @@ THEME_TAXONOMY: dict[str, dict] = {
             "var_10day", "duration_gap", "trading_book_size", "mtm_losses",
         ],
         "source_sections": ["Risk Management", "Market Risk"],
-        "query_anchor": "market risk value at risk VaR duration gap trading book MTM losses interest rate risk",
+        "query_anchor": (
+            "market risk value at risk VaR duration gap trading book "
+            "MTM mark to market losses interest rate risk capital charge "
+            "foreign exchange risk FVTPL held for trading"
+        ),
     },
     "operational_risk": {
         "name": "Operational Risk",
@@ -167,7 +188,11 @@ THEME_TAXONOMY: dict[str, dict] = {
             "oprisk_rwa", "fraud_losses", "cyber_incidents", "bcp_status",
         ],
         "source_sections": ["Risk Management", "Operational Risk"],
-        "query_anchor": "operational risk fraud losses cyber incidents business continuity RWA",
+        "query_anchor": (
+            "operational risk fraud losses cyber incidents business continuity "
+            "RWA basic indicator approach technology risk information security "
+            "operational risk capital charge"
+        ),
     },
     "asset_quality_trend": {
         "name": "Asset Quality Trends",
@@ -176,6 +201,10 @@ THEME_TAXONOMY: dict[str, dict] = {
             "npa_closing", "writeoff_rate",
         ],
         "source_sections": ["Schedules to Financial Statements", "Asset Quality"],
-        "query_anchor": "asset quality NPA movement additions recoveries write-off upgrading restructured",
+        "query_anchor": (
+            "asset quality NPA movement additions recoveries write-off "
+            "upgrading restructured opening balance closing balance "
+            "fresh slippages technical write-off"
+        ),
     },
 }
